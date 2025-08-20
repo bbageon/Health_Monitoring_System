@@ -1,6 +1,13 @@
 import React from "react";
-import Main from "./src/main";
+import { useRouter } from "expo-router";
+import MainContainer from "./src/main";
 
 export default function Index() {
-  return <Main title="Health Monitor" />;
+  const router = useRouter();
+  return (
+    <MainContainer
+      title="Main"
+      onAnalyze={() => router.push("/src/result")}
+    />
+  );
 }

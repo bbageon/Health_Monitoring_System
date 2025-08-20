@@ -1,9 +1,18 @@
 import React from "react";
 import { ActivityIndicator, Pressable, SafeAreaView, Text, View } from "react-native";
 import { styles, pill, card } from "./styles";
-import type { MainPresenterProps } from "./types";
+import type { SensorReading, SensorStatus } from "../types";
 
-function StatusBadge({ status }: { status: MainPresenterProps["status"] }) {
+type Props = {
+  title: string;
+  status: SensorStatus;
+  reading: SensorReading | null;
+  onConnect: () => void;
+  onDisconnect: () => void;
+  onAnalyze?: () => void;
+};
+
+function StatusBadge({ status }: { status: SensorStatus }) {
   const label =
     status === "connected" ? "Connected" :
     status === "connecting" ? "Connecting" :
@@ -19,10 +28,9 @@ function StatusBadge({ status }: { status: MainPresenterProps["status"] }) {
   );
 }
 
-export default function MainPresenter({ title, status, reading, onConnect, onDisconnect }: MainPresenterProps) {
+export default function Presenter({ title, status, reading, onConnect, onDisconnect, onAnalyze }: Props) {
   const isBusy = status === "connecting";
   const isOnline = status === "connected";
-
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
@@ -45,6 +53,12 @@ export default function MainPresenter({ title, status, reading, onConnect, onDis
         >
           <Text style={styles.btnText}>Disconnect</Text>
         </Pressable>
+        <Pressable
+          onPress={() => onAnalyze?.()}
+          style={[styles.btn, styles.btnPrimary]}
+        >
+          <Text style={styles.btnText}>Analyze</Text>
+        </Pressable>
       </View>
 
       <View style={styles.grid}>
@@ -54,11 +68,15 @@ export default function MainPresenter({ title, status, reading, onConnect, onDis
         </View>
         <View style={card.base}>
           <Text style={card.label}>Body Temp</Text>
-          <Text style={card.value}>{reading ? `${reading.bodyTempC.toFixed(2)} °C` : "--"}</Text>
+          <Text style={card.value}>{reading ? `${reading.bodyTempC?.toFixed?.(2)} °C` : "--"}</Text>
         </View>
         <View style={card.base}>
           <Text style={card.label}>Ambient Temp</Text>
-          <Text style={card.value}>{reading ? `${reading.ambientTempC.toFixed(2)} °C` : "--"}</Text>
+          <Text style={card.value}>{reading ? `${reading.ambientTempC?.toFixed?.(2)} °C` : "--"}</Text>
+        </View>
+        <View style={card.base}>
+          <Text style={card.label}>Humidity</Text>
+          <Text style={card.value}>{reading?.humidity == null ? "--" : `${reading.humidity.toFixed(1)} %`}</Text>
         </View>
       </View>
 

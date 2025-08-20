@@ -16,6 +16,7 @@ export const styles = StyleSheet.create({
     paddingTop: 8,
     flexDirection: "row",
     gap: 12,
+    flexWrap: "wrap",
   },
   btn: {
     borderRadius: 12,

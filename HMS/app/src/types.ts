@@ -3,10 +3,12 @@ export type BaseScreenProps = {
 };
 
 export type SensorReading = {
-  heartRate: number;      // bpm
-  bodyTempC: number;      // °C
-  ambientTempC: number;   // °C
-  timestamp: number;      // ms
+  heartRate: number;
+  bodyTempC: number;
+  ambientTempC: number;
+  timestamp: number;
+  humidity?: number | null; // ← add this
 };
+
 
 export type SensorStatus = "disconnected" | "connecting" | "connected" | "error";
