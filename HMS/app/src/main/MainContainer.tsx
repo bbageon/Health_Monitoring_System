@@ -1,7 +1,8 @@
+// app/src/main/MainContainer.tsx
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import MainPresenter from "./MainPresenter";
 import type { SensorReading, SensorStatus } from "../types";
-import { addReading, getBufferSize } from "../store/readingStore";
+import { addReading } from "../store/readingStore";
 
 type Props = {
   title?: string;
@@ -9,7 +10,6 @@ type Props = {
   onAnalyze?: () => void;
 };
 
-// 실제 ESP32 IP로 교체
 const DEFAULT_WS_URL = "ws://172.20.10.14/ws";
 
 export default function MainContainer({
@@ -21,15 +21,19 @@ export default function MainContainer({
   const [reading, setReading] = useState<SensorReading | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
-  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // setInterval have different type= [Browser -> number, Node.js -> NodeJS.Timeout]
+  const checkWebsocketRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // setTimeout have different type -> number(browser) or NodeJs.Timeout
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const manualDisconnectRef = useRef(false);
 
   const clearHeartbeat = () => {
-    if (heartbeatRef.current) {
-      clearInterval(heartbeatRef.current);
-      heartbeatRef.current = null;
+    if (checkWebsocketRef.current) {
+      clearInterval(checkWebsocketRef.current);
+      checkWebsocketRef.current = null;
     }
   };
   const clearReconnectTimer = () => {
@@ -64,32 +68,43 @@ export default function MainContainer({
       setStatus("connected");
       reconnectAttemptsRef.current = 0;
       clearHeartbeat();
-      heartbeatRef.current = setInterval(() => {
+      checkWebsocketRef.current = setInterval(() => {
         try { ws.send(JSON.stringify({ type: "ping", ts: Date.now() })); } catch { }
       }, 20000);
     };
 
     ws.onmessage = (evt) => {
       try {
-        const data = JSON.parse(String(evt.data));
-
-        // ts가 epoch(ms)처럼 1e12 이상이면 그대로 쓰고,
-        // 그 외(ESP millis 등)면 수신 시각으로 교체
+        const data = JSON.parse(String(evt.data)) || {};
         const now = Date.now();
-        const ts = Number.isFinite(data?.ts) && data.ts > 1e12 ? Number(data.ts) : now;
+        const ts = Number.isFinite(data?.ts) && Number(data.ts) > 1e12 ? Number(data.ts) : now;
+
+        const toNum = (v: any) => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
+
+        const hr = toNum(data.heartRate);
+        const amb = toNum(data.ambientTempC);             // DHT
+        const mlxObj = toNum(data.mlxObjectC);
+        const body = toNum(data.bodyTempC) ?? mlxObj;     // bodyTempC 없으면 mlxObjectC 사용
+        const hum = toNum(data.humidity);
+
+        if (hr === undefined || body === undefined || amb === undefined) {
+          console.warn("skip frame - missing required numbers", { hr, body, amb });
+          return;
+        }
 
         const payload: SensorReading = {
-          heartRate: typeof data?.heartRate === "number" ? Math.round(data.heartRate) : (null as any),
-          bodyTempC: typeof data?.bodyTempC === "number" ? Number(data.bodyTempC) : (null as any),
-          ambientTempC: typeof data?.ambientTempC === "number" ? Number(data.ambientTempC) : (null as any),
-          humidity: typeof data?.humidity === "number" ? Number(data.humidity) : null,
-          timestamp: ts, // ★ 여기!
+          heartRate: hr,
+          bodyTempC: body,
+          ambientTempC: amb,
+          timestamp: ts,
+          ...(hum !== undefined ? { humidity: hum } : {}),
         };
 
-        setReading(payload as any);
-        addReading(payload as any);
-        console.log("accepted, buf size =", getBufferSize());
-      } catch { }
+        setReading(payload);
+        addReading(payload);
+      } catch (e) {
+        console.warn("ws parse error", e);
+      }
     };
 
     ws.onerror = () => setStatus("error");

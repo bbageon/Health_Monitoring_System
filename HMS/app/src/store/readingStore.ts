@@ -15,7 +15,7 @@ const WINDOW_MS = 3600_000;
 // Physical plausible bounds (hard range)
 const BOUNDS = {
   hr:   { min: 30, max: 220 },
-  body: { min: 30, max: 42 },   // ← 30 → 20
+  body: { min: 20, max: 42 },   // ← 30 → 20
   amb:  { min: -30, max: 60 },
   hum:  { min: 0,  max: 100 },
 };

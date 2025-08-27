@@ -3,6 +3,7 @@ export type BaseScreenProps = {
 };
 
 export type SensorReading = {
+  [x: string]: any;
   heartRate: number;
   bodyTempC: number;
   ambientTempC: number;

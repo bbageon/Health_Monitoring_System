@@ -1,3 +1,4 @@
+// app/src/main/MainPresenter.tsx
 import React from "react";
 import { ActivityIndicator, Pressable, SafeAreaView, Text, View } from "react-native";
 import { styles, pill, card } from "./styles";
@@ -31,6 +32,10 @@ function StatusBadge({ status }: { status: SensorStatus }) {
 export default function Presenter({ title, status, reading, onConnect, onDisconnect, onAnalyze }: Props) {
   const isBusy = status === "connecting";
   const isOnline = status === "connected";
+
+  const fmt = (v?: number | null, digits = 2) =>
+    v == null || !Number.isFinite(v) ? "--" : v.toFixed(digits);
+
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
@@ -53,10 +58,7 @@ export default function Presenter({ title, status, reading, onConnect, onDisconn
         >
           <Text style={styles.btnText}>Disconnect</Text>
         </Pressable>
-        <Pressable
-          onPress={() => onAnalyze?.()}
-          style={[styles.btn, styles.btnPrimary]}
-        >
+        <Pressable onPress={() => onAnalyze?.()} style={[styles.btn, styles.btnPrimary]}>
           <Text style={styles.btnText}>Analyze</Text>
         </Pressable>
       </View>
@@ -64,20 +66,37 @@ export default function Presenter({ title, status, reading, onConnect, onDisconn
       <View style={styles.grid}>
         <View style={card.base}>
           <Text style={card.label}>Heart Rate</Text>
-          <Text style={card.value}>{reading ? `${reading.heartRate} bpm` : "--"}</Text>
+          <Text style={card.value}>{reading ? `${reading.heartRate ?? "--"} bpm` : "--"}</Text>
         </View>
+
         <View style={card.base}>
-          <Text style={card.label}>Body Temp</Text>
-          <Text style={card.value}>{reading ? `${reading.bodyTempC?.toFixed?.(2)} °C` : "--"}</Text>
+          <Text style={card.label}>Body Temp (MLX Obj)</Text>
+          <Text style={card.value}>{reading ? `${fmt(reading.bodyTempC)} °C` : "--"}</Text>
         </View>
+
         <View style={card.base}>
-          <Text style={card.label}>Ambient Temp</Text>
-          <Text style={card.value}>{reading ? `${reading.ambientTempC?.toFixed?.(2)} °C` : "--"}</Text>
+          <Text style={card.label}>Ambient Temp (DHT)</Text>
+          <Text style={card.value}>{reading ? `${fmt(reading.ambientTempC)} °C` : "--"}</Text>
         </View>
+
         <View style={card.base}>
           <Text style={card.label}>Humidity</Text>
           <Text style={card.value}>{reading?.humidity == null ? "--" : `${reading.humidity.toFixed(1)} %`}</Text>
         </View>
+
+        {/* MLX90614 개별 필드가 오면 추가로 보여줌 */}
+        {reading?.mlxObjectC != null && (
+          <View style={card.base}>
+            <Text style={card.label}>MLX Object</Text>
+            <Text style={card.value}>{`${fmt(reading.mlxObjectC)} °C`}</Text>
+          </View>
+        )}
+        {reading?.mlxAmbientC != null && (
+          <View style={card.base}>
+            <Text style={card.label}>MLX Ambient</Text>
+            <Text style={card.value}>{`${fmt(reading.mlxAmbientC)} °C`}</Text>
+          </View>
+        )}
       </View>
 
       <View style={styles.footer}>
