@@ -1,7 +1,6 @@
-// src/result/ResultContainer.tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ResultPresenter from "./ResultPresenter";
-import { getLastHourReadings } from "../store/readingStore";
+import { getLastHourReadings, addReading } from "../store/readingStore";
 import { fetchHealthSummary, normalizeStatus, Aggregates as AggrType } from "./GPT";
 
 function avg(nums: number[]) {
@@ -25,7 +24,7 @@ export default function ResultContainer() {
     const rows = getLastHourReadings(from, now);
 
     const hrMean = avg(rows.map((r) => r.heartRate));
-    const bodyMean = avg(rows.map((r) => r.bodyTempC));        // MLX Object가 들어온다고 가정
+    const bodyMean = avg(rows.map((r) => r.bodyTempC));        // MLX Object
     const ambMean = avg(rows.map((r) => r.ambientTempC));      // DHT
     const humidityMean = avg(rows.map((r) => (typeof r.humidity === "number" ? r.humidity : NaN)));
 
@@ -40,8 +39,9 @@ export default function ResultContainer() {
     };
   }, []);
 
-  // UI 상태
-  const [status, setStatus] = useState<"bad" | "fine" | "good">(normalizeStatus(classifyLocal(aggr)));
+  // ── UI 상태 ──────────────────────────────────────────────────────────────
+  // GPT 응답 전에는 항상 "loading"을 보여주기 위해 초기값을 "loading"으로 둡니다.
+  const [status, setStatus] = useState<"bad" | "fine" | "good" | "loading">("loading");
   const [summary, setSummary] = useState<string[]>([]);
   const [guidelines, setGuidelines] = useState<string[]>([]);
   const [disclaimer, setDisclaimer] = useState<string>("");
@@ -59,6 +59,7 @@ export default function ResultContainer() {
     inFlightRef.current = true;
     setLoading(true);
     setLastError(null);
+    setStatus("loading"); // ⬅️ 호출 시작 시 상태를 로딩으로 고정
 
     try {
       // 데이터 가드
@@ -70,9 +71,7 @@ export default function ResultContainer() {
           `데이터가 충분하지 않습니다. (need≥${MIN_SAMPLES}, got=${recentCount}; ` +
           `coverage≥${(MIN_COVERAGE * 100).toFixed(0)}%, got=${(aggr.coveragePct * 100).toFixed(0)}%)`;
 
-        const localStatus = normalizeStatus(classifyLocal(aggr));
-        setStatus(localStatus);
-
+        // 데모 요구사항: GPT가 정하기 전까지 status를 확정하지 않음 → 'loading' 유지
         setSummary([
           "Not enough data to generate a full AI summary.",
           `HR ${aggr.hrMean?.toFixed(0) ?? "--"} bpm • Body ${aggr.bodyMean?.toFixed(2) ?? "--"} °C • Amb ${aggr.ambMean?.toFixed(2) ?? "--"} °C • Hum ${aggr.humidityMean?.toFixed(1) ?? "--"} %`,
@@ -95,7 +94,7 @@ export default function ResultContainer() {
 
       // ——— OpenAI 호출(서비스 분리) ——— //
       const res = await fetchHealthSummary(aggr);
-      setStatus(res.status);
+      setStatus(res.status);       // ✅ GPT 응답으로 확정
       setSummary(res.summary);
       setGuidelines(res.guidelines);
       setDisclaimer(res.disclaimer);
@@ -108,13 +107,12 @@ export default function ResultContainer() {
           : (e?.message || "알 수 없는 오류가 발생했습니다.");
       setLastError(msg);
 
-      const localStatus = normalizeStatus(classifyLocal(aggr));
-      setStatus(localStatus);
+      // 에러 시에도 상태는 확정하지 않음(= 계속 'loading')
       setSummary([]);
       setGuidelines([]);
       setDisclaimer("");
       setReport(
-        `로컬 분석 결과로 대체합니다.\n` +
+        `Falling back to local report (no AI).\n` +
         `• HR avg: ${aggr.hrMean?.toFixed(0) ?? "--"} bpm\n` +
         `• Body: ${aggr.bodyMean?.toFixed(2) ?? "--"} °C\n` +
         `• Amb/Hum: ${aggr.ambMean?.toFixed(2) ?? "--"} °C / ${aggr.humidityMean?.toFixed(1) ?? "--"} %\n` +
@@ -134,6 +132,61 @@ export default function ResultContainer() {
     runLLM(); // 화면 진입 시 1회 자동 생성
   }, [runLLM]);
 
+  /**
+   * Test Data Set for Demoday
+   */
+  const injectScenario = useCallback(async (mode: "good" | "fine" | "bad-fever" | "bad-heat") => {
+    // 1) 최근 버퍼 상황
+    const now = Date.now();
+    const start = now - 10 * 60_000; // 최근 10분 구간에 1Hz로 채움
+    const N = 60 * 10;               // 10분 * 60 = 600 샘플
+    const dt = 1000;                 // 1Hz
+
+    // 2) 타겟 프로파일
+    let target = { hr: 72, body: 36.7, amb: 24, hum: 40, mlxObj: 36.7, mlxAmb: 24 };
+    if (mode === "fine")       target = { hr: 95,  body: 37.3, amb: 26, hum: 45, mlxObj: 37.3, mlxAmb: 26 };
+    else if (mode === "bad-fever") target = { hr: 120, body: 38.2, amb: 25, hum: 45, mlxObj: 38.2, mlxAmb: 25 };
+    else if (mode === "bad-heat")  target = { hr: 110, body: 37.4, amb: 32, hum: 75, mlxObj: 37.4, mlxAmb: 32 };
+
+    // 3) 시작값: 현재 aggr를 베이스로
+    const startVals = {
+      hr: Number.isFinite(aggr.hrMean as number) ? (aggr.hrMean as number) : Math.max(50, target.hr - 10),
+      body: Number.isFinite(aggr.bodyMean as number) ? (aggr.bodyMean as number) : Math.max(36.0, target.body - 0.3),
+      amb: Number.isFinite(aggr.ambMean as number) ? (aggr.ambMean as number) : Math.max(18, target.amb - 2),
+      hum: Number.isFinite(aggr.humidityMean as number) ? (aggr.humidityMean as number) : Math.max(35, target.hum - 5),
+      mlxObj: Number.isFinite(aggr.mlxObjMean as number) ? (aggr.mlxObjMean as number) : Math.max(36.0, target.mlxObj - 0.3),
+      mlxAmb: Number.isFinite(aggr.mlxAmbMean as number) ? (aggr.mlxAmbMean as number) : Math.max(18, target.mlxAmb - 2),
+    };
+
+    // 4) 선형 보간으로 부드럽게 이동
+    const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+    for (let i = 0; i < N; i++) {
+      const t = (i + 1) / N; // 0→1
+      const ts = start + i * dt;
+
+      const hr = lerp(startVals.hr, target.hr, t);
+      const body = lerp(startVals.body, target.body, t);
+      const amb = lerp(startVals.amb, target.amb, t);
+      const hum = lerp(startVals.hum, target.hum, t);
+      const mlxObjectC = lerp(startVals.mlxObj, target.mlxObj, t);
+      const mlxAmbientC = lerp(startVals.mlxAmb, target.mlxAmb, t);
+
+      addReading({
+        heartRate: hr,
+        bodyTempC: body,
+        ambientTempC: amb,
+        humidity: hum,
+        mlxObjectC,
+        mlxAmbientC,
+        timestamp: ts,
+      } as any);
+    }
+
+    // 5) 주입 후 LLM 재실행
+    await runLLM();
+  }, [aggr, runLLM]);
+
   return (
     <ResultPresenter
       aggr={aggr}
@@ -146,6 +199,7 @@ export default function ResultContainer() {
       loading={loading}
       lastError={lastError}
       onGenerate={runLLM}
+      onDemo={injectScenario}
     />
   );
 }

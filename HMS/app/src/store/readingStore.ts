@@ -1,9 +1,10 @@
+// src/store/readingStore.ts
 import type { SensorReading } from "../types";
 
 /**
  * In-memory ring buffer (sliding 1h window) + outlier filtering.
  * - Drops values outside physical bounds
- * - Drops values that jump too much vs previous sample
+ * - Soft-clamps excessive jumps/ROC (within tolerance) instead of hard drop
  * - (Optional) Hampel filter against recent median ± T * MAD
  */
 
@@ -15,34 +16,38 @@ const WINDOW_MS = 3600_000;
 // Physical plausible bounds (hard range)
 const BOUNDS = {
   hr:   { min: 30, max: 220 },
-  body: { min: 20, max: 42 },   // ← 30 → 20
+  body: { min: 20, max: 42 },
   amb:  { min: -30, max: 60 },
   hum:  { min: 0,  max: 100 },
 };
 
 // Previous-sample jump limits (absolute diff vs previous sample)
-// -> If your sampling is ~1 Hz, these are per-sample limits.
-// Tune based on your sensors & use-case.
 const JUMP = {
-  hr: 50,      // bpm per sample (use 50 if intense exercise expected)
-  body: 1,   // °C per sample
-  amb: 2.0,    // °C per sample
-  hum: 15,     // % per sample
+  hr: 50,     // bpm per sample (use 50 if intense exercise expected)
+  body: 1,    // °C per sample
+  amb: 2.0,   // °C per sample
+  hum: 15,    // % per sample
 };
 
-// Optional: rate-of-change per second limits (if timestamps vary).
-// If you want only absolute-diff rule, set these to very large numbers.
+// Rate-of-change per second limits (if timestamps vary)
 const ROC_PER_SEC = {
-  hr: 40,      // bpm per second
-  body: 0.6,   // °C per second
-  amb: 3.0,    // °C per second
-  hum: 20,     // % per second
+  hr: 40,     // bpm per second
+  body: 0.6,  // °C per second
+  amb: 3.0,   // °C per second
+  hum: 20,    // % per second
 };
 
 // Optional Hampel filter (median ± T * MAD on last K samples)
-const USE_HAMPEL = false; // set true to enable
-const HAMPEL_K = 9;       // window size
-const HAMPEL_T = 3.0;     // threshold multiplier
+const USE_HAMPEL = false;
+const HAMPEL_K = 9;
+const HAMPEL_T = 3.0;
+
+// Relaxation (demo-friendly): clamp instead of dropping if within tolerance
+const RELAX = {
+  skipChecksIfPrevOlderThanMs: 5000, // if prev sample is too old, skip jump/roc checks
+  jumpClampFactor: 1.5,              // accept up to (limit * factor) by clamping
+  rocClampFactor: 1.5,               // accept up to (limit * factor) by clamping
+};
 
 // ===================== Buffer =====================
 
@@ -69,11 +74,18 @@ function rocTooLarge(prevVal: number | null | undefined, curVal: number | null |
   return Math.abs(curVal - prevVal) > maxAllowed;
 }
 
+function softClampToward(prev: number, cur: number, limit: number) {
+  const delta = cur - prev;
+  if (Math.abs(delta) <= limit) return cur;
+  return prev + Math.sign(delta) * limit;
+}
+
 function median(arr: number[]): number {
   const a = [...arr].sort((x, y) => x - y);
   const n = a.length;
   return n % 2 ? a[(n - 1) / 2] : (a[n / 2 - 1] + a[n / 2]) / 2;
 }
+
 function mad(arr: number[], med: number): number {
   const absDev = arr.map((x) => Math.abs(x - med));
   // 1.4826 ~ scale factor to make MAD comparable to std dev under normality
@@ -99,8 +111,8 @@ function pruneOld() {
  * Add one reading to the buffer, dropping outliers.
  * Rules order:
  *  1) Range check (physical bounds)
- *  2) Jump check vs previous sample (absolute diff)
- *  3) ROC check vs previous sample (per second)
+ *  2) Jump check vs previous sample (absolute diff)    → soft clamp if within tolerance
+ *  3) ROC check vs previous sample (per second)        → soft clamp if within tolerance
  *  4) (Optional) Hampel median/MAD filter
  */
 export function addReading(r: SensorReading) {
@@ -115,7 +127,8 @@ export function addReading(r: SensorReading) {
     pruneOld();
     return;
   }
-  // Range check
+
+  // Range check (hard)
   if (
     !inBounds(r.heartRate, BOUNDS.hr.min, BOUNDS.hr.max) ||
     !inBounds(r.bodyTempC, BOUNDS.body.min, BOUNDS.body.max) ||
@@ -129,30 +142,125 @@ export function addReading(r: SensorReading) {
 
   const prev = buf.at(-1);
   if (prev) {
-    const dtSec = Math.max(0.001, (r.timestamp - prev.timestamp) / 1000); // guard zero
+    const dtMs = r.timestamp - prev.timestamp;
+    const dtSec = Math.max(0.001, dtMs / 1000);
+    const prevIsStale = dtMs > RELAX.skipChecksIfPrevOlderThanMs;
 
-    // Absolute jump vs previous sample
-    if (
-      absJumpTooLarge(prev.heartRate, r.heartRate, JUMP.hr) ||
-      absJumpTooLarge(prev.bodyTempC, r.bodyTempC, JUMP.body) ||
-      absJumpTooLarge(prev.ambientTempC, r.ambientTempC, JUMP.amb) ||
-      (isFiniteNum(prev.humidity) && isFiniteNum(r.humidity) && absJumpTooLarge(prev.humidity, r.humidity, JUMP.hum))
-    ) {
-      console.warn("[readingStore] dropped (jump):", r);
-      pruneOld();
-      return;
-    }
+    let hr = r.heartRate;
+    let body = r.bodyTempC;
+    let amb = r.ambientTempC;
+    let hum = r.humidity;
 
-    // Rate-of-change per second (handles variable sampling intervals)
-    if (
-      rocTooLarge(prev.heartRate, r.heartRate, dtSec, ROC_PER_SEC.hr) ||
-      rocTooLarge(prev.bodyTempC, r.bodyTempC, dtSec, ROC_PER_SEC.body) ||
-      rocTooLarge(prev.ambientTempC, r.ambientTempC, dtSec, ROC_PER_SEC.amb) ||
-      (isFiniteNum(prev.humidity) && isFiniteNum(r.humidity) && rocTooLarge(prev.humidity, r.humidity, dtSec, ROC_PER_SEC.hum))
-    ) {
-      console.warn("[readingStore] dropped (roc):", r);
-      pruneOld();
-      return;
+    if (!prevIsStale) {
+      // ----- Absolute jump checks with soft clamp -----
+      const hrJump = Math.abs(hr - prev.heartRate);
+      const bodyJump = Math.abs(body - prev.bodyTempC);
+      const ambJump = Math.abs(amb - prev.ambientTempC);
+      const humJump =
+        isFiniteNum(hum) && isFiniteNum(prev.humidity) ? Math.abs((hum as number) - (prev.humidity as number)) : 0;
+
+      if (hrJump > JUMP.hr) {
+        hr = softClampToward(prev.heartRate, hr, JUMP.hr);
+        // if (hrJump <= JUMP.hr * RELAX.jumpClampFactor) {
+        //   hr = softClampToward(prev.heartRate, hr, JUMP.hr);
+        // } else {
+        //   console.warn("[readingStore] dropped (jump-hr):", r);
+        //   pruneOld();
+        //   return;
+        // }
+      }
+      if (bodyJump > JUMP.body) {
+        softClampToward(prev.bodyTempC, body, JUMP.body);
+        // if (bodyJump <= JUMP.body * RELAX.jumpClampFactor) {
+        //   body = softClampToward(prev.bodyTempC, body, JUMP.body);
+        // } else {
+        //   console.warn("[readingStore] dropped (jump-body):", r);
+        //   pruneOld();
+        //   return;
+        // }
+      }
+      if (ambJump > JUMP.amb) {
+        softClampToward(prev.ambientTempC, amb, JUMP.amb);
+        // if (ambJump <= JUMP.amb * RELAX.jumpClampFactor) {
+        //   amb = softClampToward(prev.ambientTempC, amb, JUMP.amb);
+        // } else {
+        //   console.warn("[readingStore] dropped (jump-amb):", r);
+        //   pruneOld();
+        //   return;
+        // }
+      }
+      if (isFiniteNum(hum) && isFiniteNum(prev.humidity) && humJump > JUMP.hum) {
+        hum = softClampToward(prev.humidity as number, hum as number, JUMP.hum);
+        // if (humJump <= JUMP.hum * RELAX.jumpClampFactor) {
+        //   hum = softClampToward(prev.humidity as number, hum as number, JUMP.hum);
+        // } else {
+        //   console.warn("[readingStore] dropped (jump-hum):", r);
+        //   pruneOld();
+        //   return;
+        // }
+      }
+
+      // ----- ROC checks with soft clamp -----
+      const maxHr = ROC_PER_SEC.hr * dtSec;
+      const maxBody = ROC_PER_SEC.body * dtSec;
+      const maxAmb = ROC_PER_SEC.amb * dtSec;
+      const maxHum = ROC_PER_SEC.hum * dtSec;
+
+      const hrROC = Math.abs(hr - prev.heartRate);
+      const bodyROC = Math.abs(body - prev.bodyTempC);
+      const ambROC = Math.abs(amb - prev.ambientTempC);
+      const humROC =
+        isFiniteNum(hum) && isFiniteNum(prev.humidity) ? Math.abs((hum as number) - (prev.humidity as number)) : 0;
+
+      if (hrROC > maxHr) {
+        softClampToward(prev.heartRate, hr, maxHr);
+        // if (hrROC <= maxHr * RELAX.rocClampFactor) {
+        //   hr = softClampToward(prev.heartRate, hr, maxHr);
+        // } else {
+        //   console.warn("[readingStore] dropped (roc-hr):", r);
+        //   pruneOld();
+        //   return;
+        // }
+      }
+      if (bodyROC > maxBody) {
+        body = softClampToward(prev.bodyTempC, body, maxBody);
+        // if (bodyROC <= maxBody * RELAX.rocClampFactor) {
+        //   body = softClampToward(prev.bodyTempC, body, maxBody);
+        // } else {
+        //   console.warn("[readingStore] dropped (roc-body):", r);
+        //   pruneOld();
+        //   return;
+        // }
+      }
+      if (ambROC > maxAmb) {
+        amb = softClampToward(prev.ambientTempC, amb, maxAmb);
+        // if (ambROC <= maxAmb * RELAX.rocClampFactor) {
+        //   amb = softClampToward(prev.ambientTempC, amb, maxAmb);
+        // } else {
+        //   console.warn("[readingStore] dropped (roc-amb):", r);
+        //   pruneOld();
+        //   return;
+        // }
+      }
+      if (isFiniteNum(hum) && isFiniteNum(prev.humidity) && humROC > maxHum) {
+        hum = softClampToward(prev.humidity as number, hum as number, maxHum);
+        // if (humROC <= maxHum * RELAX.rocClampFactor) {
+        //   hum = softClampToward(prev.humidity as number, hum as number, maxHum);
+        // } else {
+        //   console.warn("[readingStore] dropped (roc-hum):", r);
+        //   pruneOld();
+        //   return;
+        // }
+      }
+
+      // apply clamped values
+      r = {
+        ...r,
+        heartRate: hr,
+        bodyTempC: body,
+        ambientTempC: amb,
+        humidity: hum as number | undefined,
+      };
     }
   }
 
@@ -180,7 +288,6 @@ export function addReading(r: SensorReading) {
   pruneOld();
   return true;
 }
-
 
 export function getBufferSize() {
   return buf.length;

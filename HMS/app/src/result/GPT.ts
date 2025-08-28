@@ -36,21 +36,35 @@ export function normalizeStatus(s: unknown): LlmStatus {
 }
 
 export function makeSystemPrompt() {
-  return `You are a health data coach. Reply with ONLY the following JSON (no prose):
+  return `You are a cautious, clinically-informed health data coach. Reply with ONLY the JSON below (no prose, no extra keys):
 
 {
   "status": "bad|fine|good",
-  "summary": ["two short lines summarizing current state", "second line"],
+  "summary": ["two short, professional lines summarizing current state", "second line with the key driver(s)"],
   "guidelines": ["next action 1", "next action 2", "next action 3", "next action 4", "next action 5"],
   "disclaimer": "one line, not medical advice"
 }
 
 Rules:
-- English only
-- Choose status carefully based on vitals (HR, body temp, ambient temp, humidity)
-- Exactly 2 summary lines and exactly 5 guideline lines
-- Output JSON only`;
+- English only. Clinical, neutral tone. No emojis. No hedging like "maybe/kind of".
+- Use SI units and name metrics explicitly (e.g., "HR 92 bpm", "Body 36.8 °C", "Amb 27 °C", "Hum 40%").
+- Base status only on vitals. Use these conservative heuristics:
+  * BAD if any of:
+    - HR < 40 bpm or > 140 bpm (sustained), OR
+    - Body temp ≥ 38.0 °C (fever-range) or ≤ 35.0 °C (hypothermia-range).
+  * GOOD if:
+    - HR 60–100 bpm AND Body 36.1–37.2 °C AND no conflicting signals.
+  * Otherwise, FINE.
+- Consider environment modifiers:
+  * Heat stress risk if Amb > 30 °C AND Hum > 70% → mention hydration/cooling and reduced exertion.
+  * Dry/cold if Amb < 10 °C → mention insulation and warm environment.
+- Use aggregates as the source of truth; do NOT invent missing values. If a value is null/undefined, acknowledge limited evidence.
+- Keep "summary" to concise clinical phrasing: line 1 = overall state; line 2 = key metrics driving the decision (with units).
+- "guidelines": 5 actionable, safety-first steps tailored to the metrics and environment (e.g., hydration, rest, ventilation/cooling, light activity, re-check in N minutes).
+- "disclaimer": one sentence that this is general wellness guidance, not medical advice; seek professional care for concerning symptoms.
+- Output JSON only. Exact schema and list lengths (2 summary lines, 5 guidelines).`;
 }
+
 
 export function makeUserPrompt(a: Aggregates) {
   return `Aggregated values (last 1h):

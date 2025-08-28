@@ -1,12 +1,16 @@
 import React, { memo, useMemo } from "react";
 import { SafeAreaView, View, Text, ScrollView, ActivityIndicator, Pressable } from "react-native";
-import type { Aggregates } from "./GPT"; // ⬅️ 분리한 gpt.ts 기준
+import type { Aggregates } from "./GPT";
 import { ResultStyles } from "./styles";
 
-type Status = "bad" | "fine" | "good";
+// GPT 응답 전 상태를 표현하기 위해 "loading" 포함
+type Status = "bad" | "fine" | "good" | "loading";
 
-const statusEmoji = (s: Status) => (s === "good" ? "🙂" : s === "fine" ? "😐" : "😟");
-const statusLabel = (s: Status) => (s === "good" ? "Good" : s === "fine" ? "Fine" : "Bad");
+const statusEmoji = (s: Status) =>
+  s === "loading" ? "⏳" : s === "good" ? "🙂" : s === "fine" ? "😐" : "😟";
+
+const statusLabel = (s: Status) =>
+  s === "loading" ? "Analyzing…" : s === "good" ? "Good" : s === "fine" ? "Fine" : "Bad";
 
 const fmt = {
   int: (v: number | null, suffix = "") =>
@@ -28,6 +32,7 @@ type Props = {
   loading?: boolean;
   lastError?: string | null;
   onGenerate?: () => void;
+  onDemo?: (mode: "good" | "fine" | "bad-fever" | "bad-heat") => void;
 };
 
 function Presenter({
@@ -41,8 +46,9 @@ function Presenter({
   loading = false,
   lastError = null,
   onGenerate,
+  onDemo,
 }: Props) {
-  // 상태에 따른 안내문 (fallback)
+  // 상태에 따른 기본 안내문 (summary가 없을 때만 사용)
   const guidance = useMemo(() => {
     if (status === "good") return "Stable condition. Keep light stretching and hydration.";
     if (status === "fine") return "Overall okay with some variability. Rest, hydrate, and avoid intense activity.";
@@ -62,6 +68,24 @@ function Presenter({
           <Text style={ResultStyles.emoji}>{statusEmoji(status)}</Text>
           <Text style={ResultStyles.statusText}>{statusLabel(status)}</Text>
         </View>
+
+        {/* Demo toolbar */}
+        {onDemo ? (
+          <View style={{ flexDirection: "row", gap: 8, justifyContent: "center", marginBottom: 8 }}>
+            <Pressable onPress={() => onDemo("good")} style={{ paddingHorizontal: 10, paddingVertical: 6, backgroundColor: "#16a34a", borderRadius: 8 }}>
+              <Text style={{ color: "#fff", fontWeight: "700" }}>Demo: Good</Text>
+            </Pressable>
+            <Pressable onPress={() => onDemo("fine")} style={{ paddingHorizontal: 10, paddingVertical: 6, backgroundColor: "#2563eb", borderRadius: 8 }}>
+              <Text style={{ color: "#fff", fontWeight: "700" }}>Demo: Fine</Text>
+            </Pressable>
+            <Pressable onPress={() => onDemo("bad-fever")} style={{ paddingHorizontal: 10, paddingVertical: 6, backgroundColor: "#b91c1c", borderRadius: 8 }}>
+              <Text style={{ color: "#fff", fontWeight: "700" }}>Demo: Bad (Fever)</Text>
+            </Pressable>
+            <Pressable onPress={() => onDemo("bad-heat")} style={{ paddingHorizontal: 10, paddingVertical: 6, backgroundColor: "#dc2626", borderRadius: 8 }}>
+              <Text style={{ color: "#fff", fontWeight: "700" }}>Demo: Bad (Heat)</Text>
+            </Pressable>
+          </View>
+        ) : null}
 
         {/* KPI Cards */}
         <View style={ResultStyles.cards}>
@@ -85,25 +109,18 @@ function Presenter({
             <Text style={ResultStyles.value}>{fmt.f1(aggr.humidityMean, " %")}</Text>
           </View>
 
-          {/* Optional MLX90614 means */}
-          {Number.isFinite(aggr.mlxObjMean as number) && (
-            <View style={ResultStyles.card}>
-              <Text style={ResultStyles.label}>MLX Object Temp (avg)</Text>
-              <Text style={ResultStyles.value}>{fmt.f2(aggr.mlxObjMean, " °C")}</Text>
-            </View>
-          )}
-          {Number.isFinite(aggr.mlxAmbMean as number) && (
-            <View style={ResultStyles.card}>
-              <Text style={ResultStyles.label}>MLX Ambient Temp (avg)</Text>
-              <Text style={ResultStyles.value}>{fmt.f2(aggr.mlxAmbMean, " °C")}</Text>
-            </View>
-          )}
+          {/* 디버그 카드(MLX 평균)는 숨김 */}
         </View>
 
-        {/* Current Condition: summary(2) or guidance fallback */}
+        {/* Current Condition */}
         <View style={ResultStyles.block}>
           <Text style={ResultStyles.blockTitle}>Current Condition</Text>
-          {summary?.length > 0 ? (
+          {status === "loading" ? (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <ActivityIndicator />
+              <Text style={ResultStyles.blockText}>Analyzing the last hour of data…</Text>
+            </View>
+          ) : summary?.length > 0 ? (
             summary.slice(0, 2).map((line, idx) => (
               <Text key={idx} style={ResultStyles.blockText}>
                 {line}
@@ -160,7 +177,6 @@ function Presenter({
           ) : (
             <>
               {!report ? (
-                // 로딩/생성 전이라면 스피너, 실패/대체면 report 표시
                 loading ? <ActivityIndicator style={{ marginTop: 8 }} /> : null
               ) : (
                 <Text style={ResultStyles.blockText}>{report}</Text>
