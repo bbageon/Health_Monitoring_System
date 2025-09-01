@@ -1,128 +1,79 @@
-# ESP32 Patient Health Monitoring System
+# Real-Time Vital Signs Monitoring System (ESP32 + React Native)
 
-This project is an ESP32-based patient health monitoring system that measures room temperature, room humidity, body temperature, heart rate (BPM), and blood oxygen levels (SpO2). The system sends the data to a web server hosted on the ESP32, making the information accessible through any web browser connected to the same network.
+Affordable, modular, real-time health monitoring with ESP32 sensors, a WebSocket stream, and an AI-assisted mobile app. 
 
-## Features
-- Measure and display room temperature and humidity using the DHT11 sensor.
-- Measure and display body temperature using the DS18B20 sensor.
-- Measure and display heart rate (BPM) and blood oxygen levels (SpO2) using the MAX30100 Pulse Oximeter.
-- Host a web server on the ESP32 to display the collected data in a user-friendly web interface.
+---
 
-## Hardware Required
-- ESP32 Development Board
-- DHT11 Temperature and Humidity Sensor
-- DS18B20 Temperature Sensor
-- MAX30100 Pulse Oximeter
-- Breadboard and Jumper Wires
-- 4.7kΩ Resistor (for DS18B20)
+## 1) Overview
 
+This project measures heart rate, body temperature, ambient temperature, and humidity, streams them over WebSocket from an ESP32, and visualizes + summarizes the last hour on a React Native app. It targets a gap between bulky hospital monitors and limited, closed-source wearables by offering a portable, low-cost, extensible solution with basic AI guidance. 
 
-| Component                | Description                                      | Amazon Link                                               | AliExpress Link                                          |
-|--------------------------|--------------------------------------------------|-----------------------------------------------------------|----------------------------------------------------------|
-| **ESP32 Development Board** | A microcontroller with Wi-Fi and Bluetooth capabilities | [Amazon](https://www.amazon.com/s?k=ESP32+Development+Board) | [AliExpress](https://www.aliexpress.com/wholesale?SearchText=ESP32+Development+Board) |
-| **DHT11 Temperature and Humidity Sensor** | Sensor for measuring temperature and humidity | [Amazon](https://www.amazon.com/s?k=DHT11+Temperature+and+Humidity+Sensor) | [AliExpress](https://www.aliexpress.com/wholesale?SearchText=DHT11+Temperature+and+Humidity+Sensor) |
-| **DS18B20 Temperature Sensor** | Digital temperature sensor | [Amazon](https://www.amazon.com/s?k=DS18B20+Temperature+Sensor) | [AliExpress](https://www.aliexpress.com/wholesale?SearchText=DS18B20+Temperature+Sensor) |
-| **MAX30100 Pulse Oximeter** | Sensor for measuring heart rate and SpO2 | [Amazon](https://www.amazon.com/s?k=MAX30100+Pulse+Oximeter) | [AliExpress](https://www.aliexpress.com/wholesale?SearchText=MAX30100+Pulse+Oximeter) |
-| **Breadboard and Jumper Wires** | For prototyping and connecting components | [Amazon](https://www.amazon.com/s?k=Breadboard+and+Jumper+Wires) | [AliExpress](https://www.aliexpress.com/wholesale?SearchText=Breadboard+and+Jumper+Wires) |
-| **4.7kΩ Resistor**       | Resistor needed for DS18B20 sensor | [Amazon](https://www.amazon.com/s?k=4.7kΩ+Resistor) | [AliExpress](https://www.aliexpress.com/wholesale?SearchText=4.7kΩ+Resistor) |
+**Why now?**  
+IoT hardware like the ESP32 enables continuous home-based monitoring; consumer wearables are limited/customization-poor, while hospital systems are costly and non-portable. 
 
-This table provides an organized way to display the required hardware components along with links to where they can be purchased.
+---
 
-## Software Required
-- Arduino IDE
-- ESP32 Board Manager (installed via Arduino IDE)
-- Required Libraries:
-  - `WiFi.h`
-  - `WebServer.h`
-  - `Wire.h`
-  - `MAX30100_PulseOximeter.h`
-  - `OneWire.h`
-  - `DallasTemperature.h`
-  - `Bonezegei_DHT11.h`
+## 2) Features
 
-## Circuit Diagram
-Connect the sensors to the ESP32 as follows:
+- Live data stream from ESP32 via WebSocket (heartbeat ping + auto-reconnect backoff).
+- On-device validation & smoothing: bounds checks, jump & rate-of-change clamps, optional Hampel filter.
+- Rolling 1-hour window with aggregate metrics (means & coverage).
+- AI health summary (status + 2-line summary + 5 guidelines + disclaimer) from OpenAI.
+- Demo scenarios to inject synthetic data for presentations (“Good”, “Fine”, “Bad – Fever/Heat”).
+- Clean mobile UI: connection controls, KPI cards, status emoji, guidelines, and last-update metadata.
 
-| Component            | ESP32 Pin      |
-|----------------------|----------------|
-| DHT11                | 18             |
-| DS18B20              | 5              |
-| MAX30100 Pulse Oximeter | I2C (SDA, SCL)|
-| 4.7kΩ Resistor       | Between DS18B20 Data and 3.3V |
+---
 
-## Installation and Setup
+## 3) System Architecture
 
-1. **Clone the Repository:**
-   ```sh
-   git clone https://github.com/yourusername/ESP32-Patient-Health-Monitoring.git
-   cd ESP32-Patient-Health-Monitoring
-   ```
+**High-level architecture**: ESP32 with multiple sensors → mobile app over WebSocket → rule/AI feedback.
 
-2. **Open the Arduino IDE:**
-   - Install the ESP32 Board Manager.
-   - Install the required libraries mentioned above.
+**Hardware (typical set):**
+- ESP32 dev board  
+- PPG (MAX30100 or equivalent) for heart rate (BPM)  
+- MLX90614 for non-contact body & ambient temperature  
+- DHT11 for ambient temperature & humidity  
 
-3. **Update Wi-Fi Credentials:**
-   - Open the `ESP32-Patient-Health-Monitoring.ino` file.
-   - Update the `ssid` and `password` variables with your Wi-Fi network credentials.
+**Software:**
+- Arduino IDE for ESP32 firmware  
+- React Native (Expo) for the mobile app  
+- WebSocket transport  
+- OpenAI integration for AI summary  
 
-4. **Upload the Code to ESP32:**
-   - Connect your ESP32 board to your computer.
-   - Select the correct board and port from the Arduino IDE.
-   - Click on the upload button.
+---
 
-5. **Open the Serial Monitor:**
-   - Set the baud rate to 115200.
-   - Observe the connection status and IP address assigned to your ESP32.
+## 4) Repository Layout (App)
+app/
+src/
+main/
+MainContainer.tsx # WS connect/teardown, message parsing, addReading()
+MainPresenter.tsx # Live KPI UI + controls (Connect/Disconnect/Analyze)
+result/
+ResultContainer.tsx # Aggregation, AI call, demo data injector
+ResultPresenter.tsx # Status, KPIs, guidelines, meta, buttons
+store/
+readingStore.ts # Validations, clamps, ring buffer, queries
+GPT.ts # OpenAI client, prompts, schema coercion
+types.ts # SensorReading, SensorStatus, etc.
 
-6. **Access the Web Server:**
-   - Open a web browser and enter the IP address displayed on the Serial Monitor.
-   - View the real-time patient health monitoring data.
+## 5) Getting Started
+- Node.js 18+
+- Expo CLI
+- OpenAI API key (optional)
 
-## Code Explanation
+Install & Run
+# 0) Install ESP32 Board
+[ESP32 Code](./project.ino)
 
-The code consists of the following main parts:
+# 1) Install
+cd HMS
+npm install
 
-- **Library Inclusions and Definitions:**
-  - Include necessary libraries for Wi-Fi, web server, and sensors.
-  - Define sensor pins and variables to store sensor data.
+# 2) Set env
+export EXPO_PUBLIC_OPENAI_API_KEY=sk-...
 
-- **Setup Function:**
-  - Initialize serial communication and sensor objects.
-  - Connect to Wi-Fi and start the web server.
-  - Initialize the pulse oximeter sensor.
+# 3) Start app
+npm expo start
 
-- **Loop Function:**
-  - Handle client requests and update sensor readings.
-  - Read data from sensors and periodically report it to the Serial Monitor.
-  - Serve the HTML page with sensor data when a client connects.
-
-- **HTML Page Generation:**
-  - Generate an HTML page with embedded sensor data to be displayed in a web browser.
- 
-
-
-
-## Results
-
-| | |
-|--------------------------|--------------------------|
-| <img src="https://github.com/user-attachments/assets/1b4ed722-50cd-4f80-826d-e840199dad8b" width="200"> | <img src="https://github.com/user-attachments/assets/6a29e3c7-420b-45a2-9299-045a0f804801" width="300"> |
-| <img src="https://github.com/user-attachments/assets/cf5d8a5e-5b88-450e-868a-dd6e73887ad8" width="300"> |
-
-
-## Contributions
-
-Feel free to fork this repository and contribute by submitting a pull request. Any improvements, bug fixes, or enhancements are welcome.
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- This project is inspired by various open-source health monitoring systems and tutorials available online.
-- Special thanks to the authors of the libraries used in this project.
-
-
-For any questions or suggestions, please open an issue or contact [Aritra](https://github.com/TheCleverIdiott).
+# 4) Configure WS URL
+# pass connectionUrl prop or change DEFAULT_WS_URL
