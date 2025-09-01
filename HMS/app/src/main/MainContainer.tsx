@@ -1,4 +1,3 @@
-// app/src/main/MainContainer.tsx
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import MainPresenter from "./MainPresenter";
 import type { SensorReading, SensorStatus } from "../types";
@@ -10,6 +9,7 @@ type Props = {
   onAnalyze?: () => void;
 };
 
+// You have to change this to your own address
 const DEFAULT_WS_URL = "ws://172.20.10.14/ws";
 
 export default function MainContainer({
