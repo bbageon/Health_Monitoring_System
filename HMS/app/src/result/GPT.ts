@@ -15,15 +15,15 @@ export type Aggregates = {
 
 export type HealthSummary = {
   status: LlmStatus;
-  summary: string[];    // expect length 2
-  guidelines: string[]; // expect length 5
+  summary: string[];    
+  guidelines: string[];
   disclaimer: string;
 };
 
 // === Client (test/prototype only) === //
 const openai = new OpenAI({
   apiKey: process.env.EXPO_PUBLIC_OPENAI_API_KEY,
-  // 브라우저 직접 호출은 테스트 용으로만!
+  // Use this option for test
   dangerouslyAllowBrowser: true,
 });
 
@@ -58,7 +58,7 @@ Rules:
 - Consider environment modifiers:
   * Heat stress risk if Amb > 30 °C AND Hum > 70% → mention hydration/cooling and reduced exertion.
   * Dry/cold if Amb < 10 °C → mention insulation and warm environment.
-- Use aggregates as the source of truth; do NOT invent missing values. If a value is null/undefined, acknowledge limited evidence.
+- Use aggregate s as the source of truth; do NOT invent missing values. If a value is null/undefined, acknowledge limited evidence.
 - Keep "summary" to concise clinical phrasing: line 1 = overall state; line 2 = key metrics driving the decision (with units).
 - "guidelines": 5 actionable, safety-first steps tailored to the metrics and environment (e.g., hydration, rest, ventilation/cooling, light activity, re-check in N minutes).
 - "disclaimer": one sentence that this is general wellness guidance, not medical advice; seek professional care for concerning symptoms.
@@ -71,13 +71,13 @@ export function makeUserPrompt(a: Aggregates) {
 HR=${a.hrMean}, Body=${a.bodyMean}, Amb=${a.ambMean}, Hum=${a.humidityMean}, MLX_Obj=${a.mlxObjMean}, MLX_Amb=${a.mlxAmbMean}`;
 }
 
-/** 모델 응답 텍스트에서 JSON 본문만 추출 */
+// JSON extracted by Model output
 export function extractJson(text: string) {
   const match = text.match(/\{[\s\S]*\}$/);
   return match ? match[0] : text;
 }
 
-/** 스키마 느슨 검증 + 보정 */
+// verify schema
 export function coerceHealthSummary(obj: any): HealthSummary {
   const status = normalizeStatus(obj?.status);
   const summary = Array.isArray(obj?.summary) ? obj.summary.slice(0, 2) : [];
@@ -86,7 +86,6 @@ export function coerceHealthSummary(obj: any): HealthSummary {
   return { status, summary, guidelines, disclaimer };
 }
 
-/** 타임아웃 래퍼 (필요시 조절) */
 function withTimeout<T>(p: Promise<T>, ms: number, msg = "Request timed out"): Promise<T> {
   return new Promise((resolve, reject) => {
     const t = setTimeout(() => reject(new Error(msg)), ms);
@@ -97,7 +96,6 @@ function withTimeout<T>(p: Promise<T>, ms: number, msg = "Request timed out"): P
   });
 }
 
-/** 공개 함수: 집계값을 받아 모델 요약을 돌려줍니다 */
 export async function fetchHealthSummary(aggr: Aggregates): Promise<HealthSummary> {
   if (!process.env.EXPO_PUBLIC_OPENAI_API_KEY) {
     throw new Error("OpenAI API key missing (.env EXPO_PUBLIC_OPENAI_API_KEY)");

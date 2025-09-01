@@ -3,7 +3,6 @@ import { SafeAreaView, View, Text, ScrollView, ActivityIndicator, Pressable } fr
 import type { Aggregates } from "./GPT";
 import { ResultStyles } from "./styles";
 
-// GPT 응답 전 상태를 표현하기 위해 "loading" 포함
 type Status = "bad" | "fine" | "good" | "loading";
 
 const statusEmoji = (s: Status) =>
@@ -48,7 +47,6 @@ function Presenter({
   onGenerate,
   onDemo,
 }: Props) {
-  // 상태에 따른 기본 안내문 (summary가 없을 때만 사용)
   const guidance = useMemo(() => {
     if (status === "good") return "Stable condition. Keep light stretching and hydration.";
     if (status === "fine") return "Overall okay with some variability. Rest, hydrate, and avoid intense activity.";
@@ -81,9 +79,9 @@ function Presenter({
             <Pressable onPress={() => onDemo("bad-fever")} style={{ paddingHorizontal: 10, paddingVertical: 6, backgroundColor: "#b91c1c", borderRadius: 8 }}>
               <Text style={{ color: "#fff", fontWeight: "700" }}>Demo: Bad (Fever)</Text>
             </Pressable>
-            <Pressable onPress={() => onDemo("bad-heat")} style={{ paddingHorizontal: 10, paddingVertical: 6, backgroundColor: "#dc2626", borderRadius: 8 }}>
+            {/* <Pressable onPress={() => onDemo("bad-heat")} style={{ paddingHorizontal: 10, paddingVertical: 6, backgroundColor: "#dc2626", borderRadius: 8 }}>
               <Text style={{ color: "#fff", fontWeight: "700" }}>Demo: Bad (Heat)</Text>
-            </Pressable>
+            </Pressable> */}
           </View>
         ) : null}
 
@@ -109,7 +107,6 @@ function Presenter({
             <Text style={ResultStyles.value}>{fmt.f1(aggr.humidityMean, " %")}</Text>
           </View>
 
-          {/* 디버그 카드(MLX 평균)는 숨김 */}
         </View>
 
         {/* Current Condition */}

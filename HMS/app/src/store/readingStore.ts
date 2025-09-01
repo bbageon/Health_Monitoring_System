@@ -302,3 +302,9 @@ export function getLastHourReadings(from: number, to: number) {
 export function _debugBuffer() {
   return { size: buf.length, head: buf[0], tail: buf.at(-1) };
 }
+
+// readingStore.ts
+export function resetBuffer() {
+  buf.length = 0;
+}
+
