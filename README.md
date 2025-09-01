@@ -57,23 +57,25 @@ GPT.ts # OpenAI client, prompts, schema coercion
 types.ts # SensorReading, SensorStatus, etc.
 
 ## 5) Getting Started
+
+### Prerequisites
 - Node.js 18+
 - Expo CLI
 - OpenAI API key (optional)
 
-Install & Run
-# 0) Install ESP32 Board
-[ESP32 Code](./project.ino)
+### Install & Run
+0. Install ESP32 Board (./project.ino)
 
-# 1) Install
-cd HMS
-npm install
+1. Install dependencies
+   cd HMS
+   npm install
 
-# 2) Set env
-export EXPO_PUBLIC_OPENAI_API_KEY=sk-...
+2. Set environment variable
+   export EXPO_PUBLIC_OPENAI_API_KEY=sk-...
 
-# 3) Start app
-npm expo start
+3. Start app
+   npx expo start
 
-# 4) Configure WS URL
-# pass connectionUrl prop or change DEFAULT_WS_URL
+4. Configure WebSocket URL
+   - Pass connectionUrl prop
+   - Or change DEFAULT_WS_URL in code

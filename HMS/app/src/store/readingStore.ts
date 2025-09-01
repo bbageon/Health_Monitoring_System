@@ -63,17 +63,6 @@ function inBounds(v: number | null | undefined, min: number, max: number) {
   return isFiniteNum(v) && v >= min && v <= max;
 }
 
-function absJumpTooLarge(prev: number | null | undefined, cur: number | null | undefined, limit: number) {
-  if (!isFiniteNum(prev) || !isFiniteNum(cur)) return false;
-  return Math.abs(cur - prev) > limit;
-}
-
-function rocTooLarge(prevVal: number | null | undefined, curVal: number | null | undefined, dtSec: number, limitPerSec: number) {
-  if (!isFiniteNum(prevVal) || !isFiniteNum(curVal) || dtSec <= 0) return false;
-  const maxAllowed = limitPerSec * dtSec;
-  return Math.abs(curVal - prevVal) > maxAllowed;
-}
-
 function softClampToward(prev: number, cur: number, limit: number) {
   const delta = cur - prev;
   if (Math.abs(delta) <= limit) return cur;
